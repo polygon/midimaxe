@@ -209,12 +209,6 @@ function parse_payload_entries(buffer, tree)
         },
     }    
 
-    -- Other payloads to eventually add (once figured out if needed and how it works):
-    -- mep4, mep6 - Measurement endpoint, what are those even used for?
-    --              For me, they contain nonsensical values for Port and Address that are never used
-    --              and addresses often don't even belong to the current network
-
-
     -- Parse payload entries
     local remain = buffer
     while remain:len() > 0
