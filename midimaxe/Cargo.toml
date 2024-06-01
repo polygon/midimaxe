@@ -1,0 +1,13 @@
+[package]
+name = "midimaxe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crossterm = "0.27.0"
+midir = "0.10"
+ratatui = "0.26.3"
+time = "0.3"
+crossbeam-channel = "0.5"
+midly = "0.5"
+anyhow = "1.0"
