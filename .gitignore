@@ -2,4 +2,4 @@
 *.pyc
 *.pcapng
 target
-
+.vscode

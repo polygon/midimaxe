@@ -1,8 +1,8 @@
 use anyhow::{bail, Context, Error, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender, TrySendError};
-use midir::{MidiOutput, MidiOutputPort};
-use std::time::Instant;
-use time::ext::NumericalDuration;
+use midir::{MidiInputPort, MidiOutput, MidiOutputPort};
+use std::time::Duration;
+use time::ext::NumericalStdDuration;
 
 use crate::midisync::MidiSync;
 
@@ -10,11 +10,12 @@ pub enum MultiSyncCommand {
     Start,
     Stop,
     AddListener(Sender<MultiSyncEvent>),
+    AddSyncForPort(MidiOutputPort)
 }
 
 #[derive(Clone, Copy)]
 pub enum MultiSyncEvent {
-    Started(Instant),
+    Started(Duration),
     Stopped,
 }
 
@@ -89,6 +90,7 @@ impl MultiSync {
             .for_each(|s| s.run());
 
         self.update_ports();
+        self.process_cmds();
 
         Ok(())
     }
@@ -96,11 +98,48 @@ impl MultiSync {
     fn update_ports(&mut self) -> Result<()> {
         let ports = self.port_enum.ports();
         let existing_ports = self.clients.iter().map(|c| &c.info.port);
-        let new_ports: Vec<MidiOutputPort> = ports
+
+        let new_ports = ports
             .clone()
             .into_iter()
-            .filter(|p| existing_ports.clone().find(|ep| p == *ep).is_none())
-            .collect();
+            .filter(|p| existing_ports.clone().find(|ep| p == *ep).is_none());
+
+        /* TODO: Matchup new ports with ports that have lost connection, this will require some fuzzy matching 
+         *       since the names (at least for ALSA) will likely change */
+
+        let new_port_info: Vec<PortInfo> = new_ports.flat_map(|port| -> Result<PortInfo> {
+            let name = self.port_enum.port_name(&port)?;
+            Ok(PortInfo { port, name })
+        }).collect();
+
+        let has_new_ports = !new_port_info.is_empty();
+
+        self.clients.extend( new_port_info.into_iter().map(|p| MultiSyncMidiClient { info: p, sync: None }));
+
+        Ok(())
+    }
+
+    fn process_cmds(&mut self) -> Result <()> {
+        while let Some(cmd) = self.ctrl.get_cmd() {
+            let result = match cmd {
+                MultiSyncCommand::AddSyncForPort(port) => self.add_sync_for_port(port),
+                _ => Ok(())
+            };
+        };
+        Ok(())
+    }
+
+    fn add_sync_for_port(&mut self, port: MidiOutputPort) -> Result<()> {
+        let client = self.clients.iter_mut().find(|p| p.info.port == port).context("Port not found")?;
+        if client.sync.is_some() {
+            bail!("Port already connected to client");
+        }
+        let midi_out =midir::MidiOutput::new("Midimaxe Sync Client")?.connect(&client.info.port, "Midimaxe Sync Client Port");
+        if midi_out.is_err() {
+            bail!("Failed to connect to MIDI output");
+        }
+        // TODO: Change BPM to timeline here
+        client.sync = Some(MidiSync::new(midi_out.unwrap() , 130.0, None));
         Ok(())
     }
 }

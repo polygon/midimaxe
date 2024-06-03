@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Error, Result};
 use midir::MidiOutputConnection;
-use std::time::Instant;
-use time::ext::NumericalDuration;
+use crate::programclock::{now, ProgramTime};
+use time::ext::{NumericalDuration, NumericalStdDuration};
+use std::time::Duration;
 
 #[derive(Debug)]
 pub enum MidiSyncState {
@@ -12,8 +13,8 @@ pub enum MidiSyncState {
 }
 
 pub struct MidiSync {
-    start_time: Option<Instant>,
-    next_clk: Option<Instant>,
+    start_time: Option<Duration>,
+    next_clk: Option<Duration>,
     bpm: f64,
     tpqn: f64,
     state: MidiSyncState,
@@ -37,10 +38,10 @@ impl MidiSync {
         }
     }
 
-    pub fn start(&mut self, start_time: Option<Instant>) {
+    pub fn start(&mut self, start_time: Option<Duration>) {
         match self.state {
             MidiSyncState::Stopped => {
-                self.start_time = Some(start_time.unwrap_or_else(|| Instant::now()));
+                self.start_time = Some(start_time.unwrap_or_else(|| now().0));
                 self.next_clk = self.start_time.clone();
                 self.state = MidiSyncState::Starting;
             }
@@ -100,7 +101,7 @@ impl MidiSync {
         let start_time = self
             .start_time
             .context("BUG: start_time == None unexpected in Starting state")?;
-        if start_time <= Instant::now() {
+        if start_time <= now().0 {
             self.port
                 .send(&MIDI_START)
                 .context("Failed to send MIDI_START message")?;
@@ -113,11 +114,11 @@ impl MidiSync {
         let next_clk = self
             .next_clk
             .context("BUG: next_clk == None unexpected in Running state")?;
-        if next_clk <= Instant::now() {
+        if next_clk <= now().0 {
             self.port
                 .send(&MIDI_CLOCK)
                 .context("Failed to send MIDI_CLOCK message")?;
-            self.next_clk = Some(next_clk + (1.0 / (self.bpm * self.tpqn)).minutes());
+            self.next_clk = Some(next_clk + (1.0 / (self.bpm * self.tpqn)).std_minutes());
         }
         Ok(())
     }

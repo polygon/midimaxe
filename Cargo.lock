@@ -302,6 +302,7 @@ dependencies = [
  "crossterm",
  "midir",
  "midly",
+ "once_cell",
  "ratatui",
  "time",
 ]
