@@ -1,15 +1,15 @@
+use crate::programclock::{now, ProgramTime};
 use anyhow::{bail, Context, Error, Result};
 use midir::MidiOutputConnection;
-use crate::programclock::{now, ProgramTime};
-use time::ext::{NumericalDuration, NumericalStdDuration};
 use std::time::Duration;
+use time::ext::{NumericalDuration, NumericalStdDuration};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MidiSyncState {
     Stopped,
     Starting,
     Running,
-    Error(Error),
+    Error(String),
 }
 
 pub struct MidiSync {
@@ -56,8 +56,9 @@ impl MidiSync {
             _ => Ok(()),
         };
         match result {
+            // TODO: Change BPM to timeline here
             Err(e) => {
-                self.state = MidiSyncState::Error(e);
+                self.state = MidiSyncState::Error(e.to_string());
             }
             _ => (),
         }
@@ -74,7 +75,7 @@ impl MidiSync {
                     .context("Failed to send MIDI_STOP message");
                 self.state = match result {
                     Ok(_) => MidiSyncState::Stopped,
-                    Err(e) => MidiSyncState::Error(e),
+                    Err(e) => MidiSyncState::Error(e.to_string()),
                 };
                 self.start_time = None;
                 self.next_clk = None;
@@ -95,6 +96,10 @@ impl MidiSync {
                 self.state
             ),
         }
+    }
+
+    pub fn state(&self) -> MidiSyncState {
+        self.state.clone()
     }
 
     fn run_starting(&mut self) -> Result<()> {

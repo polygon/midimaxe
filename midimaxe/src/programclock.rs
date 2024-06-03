@@ -1,5 +1,5 @@
-use std::time::{Duration, Instant};
 use once_cell::sync::Lazy;
+use std::time::{Duration, Instant};
 
 /* Implements a way to measure time with Durations instead of Instant
  * so that we can get a serializable clock with a defined start.
@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
  * then only read */
 struct ProgramClock(Instant);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ProgramTime(pub Duration);
 
 impl ProgramClock {
