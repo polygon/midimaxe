@@ -1,8 +1,9 @@
-use crate::programclock::{now, ProgramTime};
 use anyhow::{bail, Context, Error, Result};
 use midir::MidiOutputConnection;
 use std::time::Duration;
 use time::ext::{NumericalDuration, NumericalStdDuration};
+use utils::midimessages::{MIDI_CLOCK, MIDI_START, MIDI_STOP};
+use utils::programclock::{now, ProgramTime};
 
 #[derive(Debug, Clone)]
 pub enum MidiSyncState {
@@ -21,9 +22,6 @@ pub struct MidiSync {
     port: MidiOutputConnection,
 }
 
-const MIDI_START: [u8; 1] = [250];
-const MIDI_STOP: [u8; 1] = [252];
-const MIDI_CLOCK: [u8; 1] = [248];
 const DEFAULT_TPQN: f64 = 24.0;
 
 impl MidiSync {

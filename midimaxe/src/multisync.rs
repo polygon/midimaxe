@@ -5,8 +5,8 @@ use std::time::Duration;
 use time::ext::NumericalStdDuration;
 
 use crate::midisync::MidiSync;
-use crate::programclock::{now, ProgramTime};
 use tracing::{debug, error, info, trace, warn};
+use utils::programclock::{now, ProgramTime};
 
 pub enum MultiSyncCommand {
     Start,
@@ -146,6 +146,8 @@ impl MultiSync {
             })
             .collect();
 
+        self.clients.retain(|p| ports.contains(&p.info.port));
+
         let has_new_ports = !new_port_info.is_empty();
 
         self.clients.extend(
@@ -197,10 +199,11 @@ impl MultiSync {
         }
         let midi_out = midir::MidiOutput::new("Midimaxe Sync Client")?
             .connect(&client.info.port, "Midimaxe Sync Client Port");
-        if midi_out.is_err() {
+        if let Err(e) = midi_out {
             bail!(
-                "AddSyncForPort: Failed to connect to MIDI output: {:?}",
-                port
+                "AddSyncForPort: Failed to connect to MIDI output: {:?} : {}",
+                port,
+                e.to_string()
             );
         }
         client.sync = Some(MidiSync::new(
@@ -343,5 +346,14 @@ impl Settings {
         let quantums = runtime.as_secs_f64() / quantum_duration.as_secs_f64();
         let next_quantum = quantums.ceil();
         ProgramTime(start.0 + (quantum_duration.as_secs_f64() * next_quantum).std_seconds())
+    }
+}
+
+impl Drop for MultiSync {
+    fn drop(&mut self) {
+        self.clients
+            .iter_mut()
+            .filter_map(|c| c.sync.as_mut())
+            .for_each(|s| s.stop());
     }
 }

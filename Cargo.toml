@@ -1,5 +1,5 @@
 [workspace]
 
 members = [
-    "midimaxe",
+    "midimaxe", "sync_checker", "utils",
 ]
