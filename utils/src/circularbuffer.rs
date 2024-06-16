@@ -1,6 +1,4 @@
-use crate::programclock::{now, ProgramTime};
 use std::collections::VecDeque;
-use std::time::Duration;
 
 pub struct CircularBuffer<T> {
     buf: VecDeque<T>,

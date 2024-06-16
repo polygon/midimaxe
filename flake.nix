@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:/NixOS/nixpkgs";
+    nixpkgs.url = "github:/NixOS/nixpkgs/nixos-24.05";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
@@ -25,6 +25,7 @@
           rtmidi
           pkg-config
           alsa-lib.dev
+          cargo-flamegraph
         ];
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.alsa-lib ];
       };

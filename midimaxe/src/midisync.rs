@@ -1,9 +1,9 @@
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Context, Result};
 use midir::MidiOutputConnection;
 use std::time::Duration;
-use time::ext::{NumericalDuration, NumericalStdDuration};
+use time::ext::NumericalStdDuration;
 use utils::midimessages::{MIDI_CLOCK, MIDI_START, MIDI_STOP};
-use utils::programclock::{now, ProgramTime};
+use utils::programclock::now;
 
 #[derive(Debug, Clone)]
 pub enum MidiSyncState {

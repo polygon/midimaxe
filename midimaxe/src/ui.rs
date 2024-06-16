@@ -1,36 +1,21 @@
 use crate::midisync::MidiSyncState;
-use crate::multisync::{MultiSyncCommand, MultiSyncDisplay, MultiSyncEvent, PortDisplay, Settings};
-use crate::multisync::{MultiSyncCtrl, MultiSyncState};
-use anyhow::bail;
-use anyhow::Result;
-use crossbeam_channel::{unbounded, Receiver, Sender};
-use crossterm::{
-    event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
-};
+use crate::multisync::MultiSyncState;
+use crate::multisync::{MultiSyncCommand, MultiSyncDisplay, MultiSyncEvent, Settings};
+use crossbeam_channel::{Receiver, Sender};
+use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Constraint;
 use ratatui::layout::Rect;
 use ratatui::layout::{Alignment, Direction};
 use ratatui::style::Style;
+use ratatui::text::Line;
 use ratatui::text::Span;
-use ratatui::text::{Line, Text};
-use ratatui::widgets::block::Title;
 use ratatui::widgets::{Cell, Padding, Table, TableState};
 use ratatui::widgets::{Row, StatefulWidget, Widget};
-use ratatui::Frame;
 use ratatui::{
-    prelude::{CrosstermBackend, Layout, Stylize, Terminal},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    prelude::{Layout, Stylize},
+    widgets::{Block, Clear, Paragraph},
 };
-use std::borrow::BorrowMut;
-use std::io::stdout;
-use std::time::Duration;
 use time::ext::NumericalDuration;
-use tracing::{debug, error, info, trace, warn};
-use tracing_subscriber::fmt::writer::OrElse;
-use utils::circularbuffer::CircularBuffer;
-use utils::midimessages::MidiRealtimeMessage;
 use utils::programclock::{now, ProgramTime};
 
 pub struct MultiSyncUi {
@@ -44,7 +29,7 @@ pub struct MultiSyncUi {
 }
 
 impl Widget for &mut MultiSyncUi {
-    fn render(mut self, area: Rect, buf: &mut ratatui::prelude::Buffer)
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
     {
@@ -74,7 +59,7 @@ impl Widget for ExitConfirmation {
         Self: Sized,
     {
         if let Some(t) = self.0 {
-            if (now().0 - t.0 > 1.0.seconds()) {
+            if now().0 - t.0 > 1.0.seconds() {
                 return;
             }
         } else {
@@ -93,9 +78,9 @@ impl Widget for ExitConfirmation {
         let parea = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage((40 / 2)),
+                Constraint::Percentage(40 / 2),
                 Constraint::Percentage(60),
-                Constraint::Percentage((40 / 2)),
+                Constraint::Percentage(40 / 2),
             ])
             .split(popup_layout[1])[1];
 
@@ -176,7 +161,7 @@ impl<'a> Widget for ClientArea<'a> {
     where
         Self: Sized,
     {
-        let mut block = Block::bordered()
+        let block = Block::bordered()
             .padding(Padding::uniform(1))
             .title(" Clients ");
 
@@ -204,7 +189,7 @@ impl<'a> Widget for ClientArea<'a> {
             .highlight_style(Style::new().reversed())
             // ...and potentially show a symbol in front of the selection.
             .highlight_symbol(" >> ");
-        let mut table_state: &mut TableState = &mut self.1;
+        let table_state: &mut TableState = &mut self.1;
         StatefulWidget::render(clients, inner, buf, table_state);
     }
 }
@@ -285,7 +270,7 @@ impl MultiSyncUi {
 
     fn request_quit(&mut self) -> bool {
         if let Some(t) = self.first_exit {
-            if (now().0 - t.0 < 1.0.seconds()) {
+            if now().0 - t.0 < 1.0.seconds() {
                 return true;
             }
         }
@@ -403,7 +388,7 @@ impl MultiSyncUi {
 
     fn request_stop_all(&mut self) {
         if let Some(t) = self.first_stop {
-            if (now().0 - t.0 < 1.0.seconds()) {
+            if now().0 - t.0 < 1.0.seconds() {
                 self.first_stop = None;
                 self.cmd.send(MultiSyncCommand::Stop).unwrap();
                 return;

@@ -1,11 +1,11 @@
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Context, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender, TrySendError};
-use midir::{MidiInputPort, MidiOutput, MidiOutputPort};
+use midir::{MidiOutput, MidiOutputPort};
 use std::time::Duration;
 use time::ext::NumericalStdDuration;
 
 use crate::midisync::{MidiSync, MidiSyncState};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, warn};
 use utils::programclock::{now, ProgramTime};
 
 #[derive(Clone, Debug)]
@@ -66,6 +66,7 @@ pub struct MultiSync {
     state: MultiSyncState,
     changed: bool,
     last_update: Option<ProgramTime>,
+    last_port_update: Option<ProgramTime>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -127,6 +128,7 @@ impl MultiSync {
                 state: MultiSyncState::Stopped,
                 changed: true,
                 last_update: None,
+                last_port_update: None,
             },
             cmd,
         ))
@@ -138,8 +140,15 @@ impl MultiSync {
             .filter_map(|c| c.sync.as_mut())
             .for_each(|s| s.run());
 
-        self.process_cmds();
-        self.update_ports();
+        self.process_cmds().unwrap_or(());
+        if self
+            .last_port_update
+            .and_then(|t| Some(now().0 - t.0 > 1.0.std_seconds()))
+            .unwrap_or(true)
+        {
+            self.update_ports().unwrap_or(());
+            self.last_port_update = Some(now());
+        }
 
         let timed_update = self
             .last_update
@@ -177,7 +186,7 @@ impl MultiSync {
             .collect();
 
         self.clients.retain(|p| {
-            if (ports.contains(&p.info.port)) {
+            if ports.contains(&p.info.port) {
                 true
             } else {
                 self.changed = true;

@@ -1,33 +1,20 @@
-// TODO: Reduce some noise during development, remove these once things are nearing completion
-#![allow(unused)]
-#![allow(dead_code)]
-
-use std::io::{stdin, stdout, Write};
-use std::thread::sleep;
+use std::io::stdout;
 
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use crossterm::ExecutableCommand;
-use midir::{Ignore, MidiInput, MidiOutput, MidiOutputConnection, MidiOutputPort};
 
-use anyhow::{Context, Error, Result};
-use midly::live::{LiveEvent, SystemRealtime};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use std::thread;
-use std::time::Instant;
-use time::ext::{InstantExt, NumericalStdDuration};
-use time::Duration;
+use time::ext::NumericalStdDuration;
 
 mod midisync;
 mod multisync;
 mod ui;
 
-use anyhow::bail;
-use midisync::MidiSync;
-use multisync::{MultiSyncCommand, MultiSyncEvent, PortInfo, Settings};
-use tracing::{debug, error, info, trace, warn};
+use multisync::MultiSyncCommand;
 use ui::MultiSyncUi;
 use utils::programclock;
 
@@ -48,12 +35,12 @@ fn run() -> anyhow::Result<()> {
     programclock::now();
     let (mut sync, cmd) = multisync::MultiSync::new()?;
     let (s, listener) = crossbeam_channel::unbounded::<multisync::MultiSyncEvent>();
-    cmd.send(MultiSyncCommand::AddListener(s));
+    cmd.send(MultiSyncCommand::AddListener(s)).unwrap();
     let mut ui = MultiSyncUi::new(cmd, listener);
 
-    let t = thread::spawn(move || loop {
-        sync.run();
-        std::thread::sleep(1.0.std_milliseconds())
+    let _t = thread::spawn(move || loop {
+        sync.run().unwrap_or(());
+        std::thread::sleep(0.2.std_milliseconds())
     });
 
     // Initialize console
