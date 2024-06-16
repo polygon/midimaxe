@@ -4,9 +4,22 @@ use midir::{MidiInputPort, MidiOutput, MidiOutputPort};
 use std::time::Duration;
 use time::ext::NumericalStdDuration;
 
-use crate::midisync::MidiSync;
+use crate::midisync::{MidiSync, MidiSyncState};
 use tracing::{debug, error, info, trace, warn};
 use utils::programclock::{now, ProgramTime};
+
+#[derive(Clone, Debug)]
+pub struct PortDisplay {
+    pub info: PortInfo,
+    pub state: Option<MidiSyncState>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MultiSyncDisplay {
+    pub state: MultiSyncState,
+    pub settings: Settings,
+    pub ports: Vec<PortDisplay>,
+}
 
 pub enum MultiSyncCommand {
     Start,
@@ -24,6 +37,7 @@ pub enum MultiSyncEvent {
     Stopped,
     NewPorts(Vec<PortInfo>),
     SettingsUpdated(Settings),
+    DisplayUpdate(MultiSyncDisplay),
 }
 
 pub struct MultiSyncCtrl {
@@ -31,7 +45,7 @@ pub struct MultiSyncCtrl {
     cmd: Receiver<MultiSyncCommand>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum MultiSyncState {
     Stopped,
     Started(ProgramTime),
@@ -39,9 +53,9 @@ pub enum MultiSyncState {
 
 #[derive(Clone, Debug)]
 pub struct Settings {
-    bpm: f64,
-    quantum: f64,
-    tpqn: Option<f64>,
+    pub bpm: f64,
+    pub quantum: f64,
+    pub tpqn: Option<f64>,
 }
 
 pub struct MultiSync {
@@ -50,6 +64,8 @@ pub struct MultiSync {
     clients: Vec<MultiSyncMidiClient>,
     settings: Settings,
     state: MultiSyncState,
+    changed: bool,
+    last_update: Option<ProgramTime>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -107,8 +123,10 @@ impl MultiSync {
                 ctrl,
                 port_enum,
                 clients: Vec::new(),
-                settings: Settings::new(130.0, 64.0, None),
+                settings: Settings::new(130.0, 16.0, None),
                 state: MultiSyncState::Stopped,
+                changed: true,
+                last_update: None,
             },
             cmd,
         ))
@@ -122,6 +140,18 @@ impl MultiSync {
 
         self.process_cmds();
         self.update_ports();
+
+        let timed_update = self
+            .last_update
+            .and_then(|t| Some(now().0 - t.0 > 0.5.std_seconds()))
+            .unwrap_or(true);
+
+        if self.changed || timed_update {
+            self.ctrl
+                .publish(MultiSyncEvent::DisplayUpdate(self.to_display()));
+            self.last_update = Some(now());
+            self.changed = false;
+        }
 
         Ok(())
     }
@@ -146,7 +176,14 @@ impl MultiSync {
             })
             .collect();
 
-        self.clients.retain(|p| ports.contains(&p.info.port));
+        self.clients.retain(|p| {
+            if (ports.contains(&p.info.port)) {
+                true
+            } else {
+                self.changed = true;
+                false
+            }
+        });
 
         let has_new_ports = !new_port_info.is_empty();
 
@@ -162,6 +199,7 @@ impl MultiSync {
 
         if has_new_ports {
             self.ctrl.publish(MultiSyncEvent::NewPorts(new_port_info));
+            self.changed = true;
         }
 
         Ok(())
@@ -169,6 +207,7 @@ impl MultiSync {
 
     fn process_cmds(&mut self) -> Result<()> {
         while let Some(cmd) = self.ctrl.get_cmd() {
+            self.changed = true;
             let result = match cmd {
                 MultiSyncCommand::AddSyncForPort(port) => self.add_sync_for_port(port),
                 MultiSyncCommand::UpdateSettings(settings) => self.update_settings(settings),
@@ -217,6 +256,10 @@ impl MultiSync {
 
     fn update_settings(&mut self, settings: Settings) -> Result<()> {
         if let MultiSyncState::Stopped = self.state {
+            if !settings.is_valid() {
+                warn!(settings = ?settings, "Ignoring invalid settings");
+                bail!("UpdateSettings: Invalid Settings {:?}", self.state);
+            }
             info!(settings = ?settings, "New settings");
             self.settings = settings;
             self.clients
@@ -320,6 +363,14 @@ impl MultiSync {
 
         Ok(())
     }
+
+    pub fn to_display(&self) -> MultiSyncDisplay {
+        MultiSyncDisplay {
+            state: self.state.clone(),
+            settings: self.settings.clone(),
+            ports: self.clients.iter().map(|c| c.to_display()).collect(),
+        }
+    }
 }
 
 impl MultiSyncState {
@@ -347,6 +398,20 @@ impl Settings {
         let next_quantum = quantums.ceil();
         ProgramTime(start.0 + (quantum_duration.as_secs_f64() * next_quantum).std_seconds())
     }
+
+    pub fn is_valid(&self) -> bool {
+        let mut valid = true;
+
+        if self.bpm < 60.0 || self.bpm > 300.0 {
+            valid = false;
+        }
+
+        if self.quantum < 1.0 {
+            valid = false;
+        }
+
+        valid
+    }
 }
 
 impl Drop for MultiSync {
@@ -355,5 +420,28 @@ impl Drop for MultiSync {
             .iter_mut()
             .filter_map(|c| c.sync.as_mut())
             .for_each(|s| s.stop());
+    }
+}
+
+impl MultiSyncMidiClient {
+    pub fn to_display(&self) -> PortDisplay {
+        PortDisplay {
+            info: self.info.clone(),
+            state: self.sync.as_ref().and_then(|s| Some(s.state())),
+        }
+    }
+}
+
+impl Default for MultiSyncDisplay {
+    fn default() -> Self {
+        Self {
+            state: MultiSyncState::Stopped,
+            settings: Settings {
+                bpm: 130.,
+                quantum: 4.,
+                tpqn: None,
+            },
+            ports: vec![],
+        }
     }
 }
