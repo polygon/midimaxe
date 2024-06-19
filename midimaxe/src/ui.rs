@@ -6,7 +6,7 @@ use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Constraint;
 use ratatui::layout::Rect;
 use ratatui::layout::{Alignment, Direction};
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::{Cell, Padding, Table, TableState};
@@ -15,7 +15,9 @@ use ratatui::{
     prelude::{Layout, Stylize},
     widgets::{Block, Clear, Paragraph},
 };
+use std::f64::consts::PI;
 use time::ext::NumericalDuration;
+use tui_big_text::{BigText, BigTextBuilder, PixelSize};
 use utils::programclock::{now, ProgramTime};
 
 pub struct MultiSyncUi {
@@ -34,7 +36,7 @@ impl Widget for &mut MultiSyncUi {
         Self: Sized,
     {
         let layout = Layout::vertical(vec![
-            Constraint::Length(10),
+            Constraint::Length(12),
             Constraint::Min(1),
             Constraint::Length(1),
         ]);
@@ -52,6 +54,7 @@ impl Widget for &mut MultiSyncUi {
 struct ExitConfirmation(Option<ProgramTime>, String);
 struct CommonArea<'a>(&'a MultiSyncDisplay);
 struct ClientArea<'a>(&'a MultiSyncDisplay, &'a mut TableState);
+struct BeatLine<'a>(&'a MultiSyncDisplay);
 
 impl Widget for ExitConfirmation {
     fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
@@ -111,16 +114,20 @@ impl<'a> Widget for CommonArea<'a> {
             MultiSyncState::Stopped => {
                 block = block.title(" STOPPED ".slow_blink().red().bold());
                 block =
-                    block.title_bottom(" (Shift+s) Start, ([Shift] left/right) BPM, (</>) Quantum ")
+                    block.title_bottom(" (Shift+s) Start, (Shift+z) Stop all, ([Shift] left/right) BPM, (</>) Quantum ")
             }
             MultiSyncState::Started(_) => {
                 block = block.title(" RUNNING ".green().bold());
-                block = block.title_bottom(" (Shift+z) Stop all ")
+                block = block.title_bottom(" (Shift+s) Start all, (Shift+z) Stop all ")
             }
         }
 
         let inner = block.inner(area);
         block.render(area, buf);
+
+        let inner_layout =
+            Layout::vertical([Constraint::Length(3), Constraint::Length(4)]).spacing(1);
+        let inner_area: [Rect; 2] = inner_layout.areas(inner);
 
         let inner_text = vec![
             Line::from(vec![
@@ -152,7 +159,9 @@ impl<'a> Widget for CommonArea<'a> {
             ))]),
         ];
         let ip = Paragraph::new(inner_text);
-        ip.render(inner, buf);
+        let beatline = BeatLine(&self.0);
+        ip.render(inner_area[0], buf);
+        beatline.render(inner_area[1], buf);
     }
 }
 
@@ -163,7 +172,8 @@ impl<'a> Widget for ClientArea<'a> {
     {
         let block = Block::bordered()
             .padding(Padding::uniform(1))
-            .title(" Clients ");
+            .title(" Clients ")
+            .title_bottom(" (Up/Down) Select, (Enter) Add/Start, (z) Stop, (Del) Remove ");
 
         let inner = block.inner(area);
         block.render(area, buf);
@@ -191,6 +201,58 @@ impl<'a> Widget for ClientArea<'a> {
             .highlight_symbol(" >> ");
         let table_state: &mut TableState = &mut self.1;
         StatefulWidget::render(clients, inner, buf, table_state);
+    }
+}
+
+impl<'a> Widget for BeatLine<'a> {
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let t = now();
+        let (intensity, last_4, fill, mfill) = if let MultiSyncState::Started(ts) = self.0.state {
+            let quarter = self.0.settings.get_quarter(ts, Some(t));
+            let partial = quarter.fract();
+            let beat_prog = partial / 0.5;
+            let intensity = if beat_prog < 1.0 {
+                (PI / 2.0 * beat_prog).cos().powf(0.5)
+            } else {
+                0.0
+            };
+            let last_4 = quarter.floor() as u8 % 4;
+            let bars_completed = (quarter / 4.0).floor();
+            let total_bars_in_quantum = (self.0.settings.quantum / 4.0).ceil();
+            let bars_in_quantum_completed = bars_completed % total_bars_in_quantum;
+            let fill = (16.0 * bars_in_quantum_completed / total_bars_in_quantum) as u32;
+            let mut mfill = (16.0 / total_bars_in_quantum) as u32;
+            if fill + mfill == 15 && mfill > 1 {
+                mfill += 1;
+            }
+            ((255.0 * intensity) as u8, last_4 + 1, fill, mfill)
+        } else {
+            (0, 1, 0, 0)
+        };
+        let bl = BigText::builder()
+            .pixel_size(PixelSize::Quadrant)
+            .lines(vec![Line::from(vec![
+                Span::styled(" ", Style::new().bg(Color::Rgb(intensity, 0, 0))),
+                Span::raw(format!(" {} ", last_4)),
+                Span::styled(
+                    (0..fill).map(|_| " ").collect::<String>(),
+                    Style::new().bg(Color::Rgb(255, 255, 255)),
+                ),
+                Span::styled(
+                    (0..mfill).map(|_| " ").collect::<String>(),
+                    Style::new().bg(Color::Rgb(128, 128, 128)),
+                ),
+                Span::styled(
+                    (0..(16 - fill - mfill)).map(|_| " ").collect::<String>(),
+                    Style::new().bg(Color::Rgb(0, 0, 0)),
+                ),
+            ])])
+            .build()
+            .unwrap();
+        bl.render(area, buf);
     }
 }
 
@@ -250,6 +312,9 @@ impl MultiSyncUi {
                     (KeyEventKind::Press, KeyCode::Char('<'), KeyModifiers::NONE) => {
                         self.control_quantum(false);
                     }
+                    (KeyEventKind::Press, KeyCode::Delete, KeyModifiers::NONE) => {
+                        self.remove_port();
+                    }
                     _ => (),
                 }
             }
@@ -306,9 +371,9 @@ impl MultiSyncUi {
 
     fn control_quantum(&mut self, inc: bool) {
         let nc = if inc {
-            self.disp.settings.quantum + 1.0
+            ((self.disp.settings.quantum / 4.0).floor() + 1.0) * 4.0
         } else {
-            self.disp.settings.quantum - 1.0
+            ((self.disp.settings.quantum / 4.0).floor() - 1.0) * 4.0
         };
 
         self.cmd
@@ -382,11 +447,25 @@ impl MultiSyncUi {
         }
     }
 
+    fn remove_port(&mut self) {
+        if let Some(idx) = self.table_state.selected() {
+            if let Some(port) = self.disp.ports.get(idx) {
+                self.cmd
+                    .send(MultiSyncCommand::DelSyncForPort(port.info.clone()))
+                    .unwrap();
+            }
+        }
+    }
+
     fn start_all(&mut self) {
         self.cmd.send(MultiSyncCommand::Start).unwrap();
     }
 
     fn request_stop_all(&mut self) {
+        if let MultiSyncState::Stopped = self.disp.state {
+            self.cmd.send(MultiSyncCommand::Stop).unwrap();
+            return;
+        }
         if let Some(t) = self.first_stop {
             if now().0 - t.0 < 1.0.seconds() {
                 self.first_stop = None;

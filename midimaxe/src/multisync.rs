@@ -26,6 +26,7 @@ pub enum MultiSyncCommand {
     Stop,
     AddListener(Sender<MultiSyncEvent>),
     AddSyncForPort(PortInfo),
+    DelSyncForPort(PortInfo),
     UpdateSettings(Settings),
     StartPort(PortInfo),
     StopPort(PortInfo),
@@ -219,6 +220,7 @@ impl MultiSync {
             self.changed = true;
             let result = match cmd {
                 MultiSyncCommand::AddSyncForPort(port) => self.add_sync_for_port(port),
+                MultiSyncCommand::DelSyncForPort(port) => self.del_sync_for_port(port),
                 MultiSyncCommand::UpdateSettings(settings) => self.update_settings(settings),
                 MultiSyncCommand::Start => self.start(),
                 MultiSyncCommand::Stop => self.stop(),
@@ -263,6 +265,29 @@ impl MultiSync {
         Ok(())
     }
 
+    fn del_sync_for_port(&mut self, port: PortInfo) -> Result<()> {
+        let client = self
+            .clients
+            .iter_mut()
+            .find(|p| p.info.port == port.port)
+            .context("Port not found")?;
+        {
+            let sync = client.sync.as_ref().context(format!(
+                "DelSyncForPort: Port is not connected yet: {:?}",
+                port
+            ))?;
+            match sync.state() {
+                MidiSyncState::Stopped | MidiSyncState::Error(_) => (),
+                _ => bail!("DelSyncForPort: Port is not stopped: {:?}", port),
+            }
+        }
+
+        drop(client.sync.take());
+        info!(port = ?port, "DelSyncForPort: Sync port removed");
+
+        Ok(())
+    }
+
     fn update_settings(&mut self, settings: Settings) -> Result<()> {
         if let MultiSyncState::Stopped = self.state {
             if !settings.is_valid() {
@@ -294,7 +319,7 @@ impl MultiSync {
                 start_time
             }
             MultiSyncState::Started(start_time) => {
-                let next_quantum = self.settings.next_quantum(start_time);
+                let next_quantum = self.settings.next_quantum(start_time, None);
                 info!(
                     ?start_time,
                     ?next_quantum,
@@ -335,7 +360,7 @@ impl MultiSync {
                 );
             }
             MultiSyncState::Started(start_time) => {
-                let next_quantum = self.settings.next_quantum(start_time);
+                let next_quantum = self.settings.next_quantum(start_time, None);
                 info!(?start_time, ?next_quantum, ?port, "Starting port");
                 next_quantum
             }
@@ -396,16 +421,40 @@ impl Settings {
         Settings { bpm, quantum, tpqn }
     }
 
-    pub fn next_quantum(&self, start: ProgramTime) -> ProgramTime {
-        let now = now();
+    pub fn next_quantum(&self, start: ProgramTime, current: Option<ProgramTime>) -> ProgramTime {
+        let now = current.unwrap_or_else(|| now());
         if now.0 <= start.0 {
             return start;
         }
+
         let quantum_duration = (60.0 / self.bpm * self.quantum).std_seconds();
         let runtime = now.0 - start.0;
         let quantums = runtime.as_secs_f64() / quantum_duration.as_secs_f64();
         let next_quantum = quantums.ceil();
         ProgramTime(start.0 + (quantum_duration.as_secs_f64() * next_quantum).std_seconds())
+    }
+
+    pub fn quantum(&self, start: ProgramTime, current: Option<ProgramTime>) -> f64 {
+        let now = current.unwrap_or_else(|| now());
+        if now.0 <= start.0 {
+            return 0.0;
+        }
+        let quantum_duration = (60.0 / self.bpm * self.quantum).std_seconds();
+        let runtime = now.0 - start.0;
+        let quantums = runtime.as_secs_f64() / quantum_duration.as_secs_f64();
+        quantums
+    }
+
+    pub fn get_quarter(&self, start: ProgramTime, current: Option<ProgramTime>) -> f64 {
+        let current = current.unwrap_or_else(|| now());
+        if current.0 <= start.0 {
+            return 0.0;
+        }
+
+        let quarter_duration = (60.0 / self.bpm) as f64;
+        let runtime = (current.0 - start.0).as_secs_f64();
+        let quarters = runtime / quarter_duration;
+        quarters
     }
 
     pub fn is_valid(&self) -> bool {
