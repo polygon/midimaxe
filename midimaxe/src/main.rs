@@ -40,7 +40,7 @@ fn run() -> anyhow::Result<()> {
 
     let _t = thread::spawn(move || loop {
         sync.run().unwrap_or(());
-        std::thread::sleep(0.2.std_milliseconds())
+        std::thread::sleep(0.1.std_milliseconds())
     });
 
     // Initialize console
