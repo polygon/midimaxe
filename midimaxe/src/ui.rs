@@ -219,7 +219,7 @@ impl<'a> Widget for BeatLine<'a> {
             } else {
                 0.0
             };
-            let last_4 = quarter.floor() as u8 % 4;
+            let last_4 = (quarter.floor() % 4.0) as u8;
             let bars_completed = (quarter / 4.0).floor();
             let total_bars_in_quantum = (self.0.settings.quantum / 4.0).ceil();
             let bars_in_quantum_completed = bars_completed % total_bars_in_quantum;
