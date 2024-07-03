@@ -22,6 +22,7 @@
         rustc = rust-bin;
       };
       dev-deps = with pkgs; [
+        rust-bin
         rust-analyzer
         rustfmt
         lldb
