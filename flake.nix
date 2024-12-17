@@ -39,7 +39,7 @@
       };
 
       packages.${system}.midimaxe = naersk-lib.buildPackage {
-        pname = "midimaxe";
+        name = "midimaxe";
         root = ./.;
         buildInputs = runtime-deps;
         nativeBuildInputs = build-deps;

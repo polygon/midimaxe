@@ -135,11 +135,13 @@ impl MultiSync {
         ))
     }
 
-    pub fn run(&mut self) -> Result<()> {
-        self.clients
+    pub fn run(&mut self) -> Result<Option<Duration>> {
+        let next_events: Vec<Option<Duration>> = self
+            .clients
             .iter_mut()
             .filter_map(|c| c.sync.as_mut())
-            .for_each(|s| s.run());
+            .map(|s| s.run())
+            .collect();
 
         self.process_cmds().unwrap_or(());
         if self
@@ -163,7 +165,14 @@ impl MultiSync {
             self.changed = false;
         }
 
-        Ok(())
+        let next_event: Option<Duration> = next_events.iter().fold(None, |a, b| match (a, b) {
+            (Some(a), Some(b)) => Some(b.min(&a).to_owned()),
+            (None, Some(b)) => Some(b.to_owned()),
+            (Some(a), None) => Some(a.to_owned()),
+            _ => None,
+        });
+
+        Ok(next_event)
     }
 
     fn update_ports(&mut self) -> Result<()> {

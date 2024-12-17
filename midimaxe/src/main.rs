@@ -16,7 +16,7 @@ mod ui;
 
 use multisync::MultiSyncCommand;
 use ui::MultiSyncUi;
-use utils::programclock;
+use utils::programclock::{self, now};
 
 fn main() {
     /*tracing_subscriber::fmt()
@@ -39,8 +39,21 @@ fn run() -> anyhow::Result<()> {
     let mut ui = MultiSyncUi::new(cmd, listener);
 
     let _t = thread::spawn(move || loop {
-        sync.run().unwrap_or(());
-        std::thread::sleep(0.1.std_milliseconds())
+        let sleep_duration = sync
+            .run()
+            .unwrap_or(None)
+            .and_then(|next_event| {
+                let current = now().0;
+                if current < next_event {
+                    Some(next_event - current)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(10.0.std_milliseconds());
+        if sleep_duration > 0.0.std_milliseconds() {
+            std::thread::sleep(sleep_duration);
+        }
     });
 
     // Initialize console

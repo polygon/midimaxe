@@ -224,7 +224,7 @@ fn main() -> Result<()> {
         selected: 0,
     };
     let mut client_id = 2;
-    sc.clients.push(MidiSyncClient::new(100, 24.0, 1).unwrap());
+    sc.clients.push(MidiSyncClient::new(10, 24.0, 1).unwrap());
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
@@ -242,7 +242,7 @@ fn main() -> Result<()> {
                     (KeyEventKind::Press, KeyCode::Char('q')) => break,
                     (KeyEventKind::Press, KeyCode::Char('+')) => {
                         sc.clients
-                            .push(MidiSyncClient::new(100, 24.0, client_id).unwrap());
+                            .push(MidiSyncClient::new(10, 24.0, client_id).unwrap());
                         client_id += 1;
                     }
                     (KeyEventKind::Press, KeyCode::Up) => {

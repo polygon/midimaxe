@@ -47,7 +47,7 @@ impl MidiSync {
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Option<Duration> {
         let result: Result<()> = match &self.state {
             MidiSyncState::Starting => self.run_starting(),
             MidiSyncState::Running => self.run_running(),
@@ -57,8 +57,9 @@ impl MidiSync {
             // TODO: Change BPM to timeline here
             Err(e) => {
                 self.state = MidiSyncState::Error(e.to_string());
+                None
             }
-            _ => (),
+            _ => self.next_clk,
         }
     }
 
@@ -109,8 +110,10 @@ impl MidiSync {
                 .send(&MIDI_START)
                 .context("Failed to send MIDI_START message")?;
             self.state = MidiSyncState::Running;
+            self.run_running()
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     fn run_running(&mut self) -> Result<()> {
