@@ -25,7 +25,7 @@ This will allow resuming single devices that lost synchronization without stoppi
 Install Rust by your preferred means. Then build as usual:
 
 ```
-cargo build
+cargo build --release
 cargo run --bin midimaxe --release
 cargo run --bin sync_checker --release
 ```
